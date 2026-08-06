@@ -1,0 +1,58 @@
+{
+    "hostname": {
+        "success": true,
+        "command": "hostname",
+        "output": "LAPTOP-DPEC2KOJ",
+        "stderr": "",
+        "return_code": 0,
+        "duration_ms": 50
+    },
+    "kernel": {
+        "success": false,
+        "command": "uname -a",
+        "output": "",
+        "stderr": "Command not found",
+        "return_code": -2,
+        "duration_ms": 5
+    },
+    "interfaces": {
+        "success": false,
+        "command": "ip -br addr",
+        "output": "",
+        "stderr": "Command not found",
+        "return_code": -2,
+        "duration_ms": 7
+    },
+    "routes": {
+        "success": false,
+        "command": "ip route",
+        "output": "",
+        "stderr": "Command not found",
+        "return_code": -2,
+        "duration_ms": 4
+    },
+    "rules": {
+        "success": false,
+        "command": "ip rule",
+        "output": "",
+        "stderr": "Command not found",
+        "return_code": -2,
+        "duration_ms": 3
+    },
+    "neighbors": {
+        "success": false,
+        "command": "ip neigh",
+        "output": "",
+        "stderr": "Command not found",
+        "return_code": -2,
+        "duration_ms": 2
+    },
+    "tcp": {
+        "success": false,
+        "command": "ss -tuna",
+        "output": "",
+        "stderr": "Command not found",
+        "return_code": -2,
+        "duration_ms": 2
+    }
+}
