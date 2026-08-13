@@ -1,0 +1,26 @@
+id: RX_PACKET_DROP
+
+title: RX Packet Drops
+
+severity: warning
+
+description: >
+  Network interface is dropping received packets.
+
+possible_causes:
+  - RX ring buffer exhausted
+  - CPU cannot process packets
+  - Interrupt imbalance
+  - NIC driver issue
+  - Firmware issue
+
+recommendations:
+  - Check ethtool -g
+  - Check ethtool -S
+  - Verify RSS queues
+  - Verify IRQ affinity
+  - Review /proc/net/softnet_stat
+
+references:
+  - ethtool
+  - softnet_stat

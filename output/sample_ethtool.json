@@ -1,0 +1,25 @@
+{
+    "eth0": {
+        "statistics": {
+            "rx_packets": 10000,
+            "tx_packets": 9000,
+            "rx_dropped": 7,
+            "tx_dropped": 0,
+            "rx_crc_errors": 3
+        },
+        "findings": [
+            {
+                "severity": "warning",
+                "metric": "rx_dropped",
+                "value": 7,
+                "message": "RX packet drops detected"
+            },
+            {
+                "severity": "warning",
+                "metric": "rx_crc_errors",
+                "value": 3,
+                "message": "CRC errors detected"
+            }
+        ]
+    }
+}

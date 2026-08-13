@@ -1,46 +1,127 @@
 import argparse
 
-from netscope.collectors.system import collect_system
-from netscope.collectors.connectivity import collect_connectivity
-from netscope.reports.json import write_json
+from netscope.monitors.packetdrop import monitor_packet_drops
+
+
+def print_packetdrop_result(diagnosis):
+    """Print a packet-drop diagnosis."""
+
+    print()
+    print("=" * 60)
+    print("NetScope Packet Drop Monitor")
+    print("=" * 60)
+
+    print(f"Location   : {diagnosis.location}")
+    print(f"Confidence : {diagnosis.confidence}%")
+    print(f"Severity   : {diagnosis.severity}")
+
+    print()
+    print("Evidence:")
+
+    for evidence in diagnosis.evidence:
+        print(f"  - {evidence}")
+
+    print()
+    print("Recommendations:")
+
+    for recommendation in diagnosis.recommendations:
+        print(f"  - {recommendation}")
+
+    print("=" * 60)
+
+
+def run_packetdrop_monitor(interval, iterations):
+    """Run the live packet-drop monitor."""
+
+    print("Starting NetScope packet-drop monitor...")
+    print(f"Observation interval: {interval} seconds")
+
+    if iterations == 0:
+        print("Mode: Continuous")
+    else:
+        print(f"Observations: {iterations}")
+
+    print()
+    print("Press Ctrl+C to stop.")
+    print()
+
+    try:
+
+        monitor_packet_drops(
+            interval=interval,
+            iterations=iterations,
+            callback=print_packetdrop_result,
+        )
+
+    except KeyboardInterrupt:
+
+        print()
+        print("NetScope packet-drop monitor stopped.")
 
 
 def main():
 
-    parser = argparse.ArgumentParser(prog="netscope")
+    parser = argparse.ArgumentParser(
+        description="NetScope Linux troubleshooting tool"
+    )
 
-    subparsers = parser.add_subparsers(dest="command")
+    subparsers = parser.add_subparsers(
+        dest="command"
+    )
 
-    collect_parser = subparsers.add_parser("collect")
+    # --------------------------------------------------
+    # MONITOR
+    # --------------------------------------------------
 
-    collect_parser.add_argument(
-        "collector",
-        choices=["system", "connectivity"]
+    monitor_parser = subparsers.add_parser(
+        "monitor",
+        help="Run live troubleshooting monitors",
+    )
+
+    monitor_subparsers = monitor_parser.add_subparsers(
+        dest="monitor_type"
+    )
+
+    packetdrop_parser = monitor_subparsers.add_parser(
+        "packetdrop",
+        help="Monitor Linux packet drops",
+    )
+
+    packetdrop_parser.add_argument(
+        "--interval",
+        type=int,
+        default=10,
+        help="Observation interval in seconds (default: 10)",
+    )
+
+    packetdrop_parser.add_argument(
+        "--iterations",
+        type=int,
+        default=3,
+        help="Number of observations (default: 3, use 0 for continuous)",
     )
 
     args = parser.parse_args()
 
-    if args.command == "collect":
+    # --------------------------------------------------
+    # COMMAND DISPATCH
+    # --------------------------------------------------
 
-        if args.collector == "system":
+    if args.command == "monitor":
 
-            data = collect_system()
+        if args.monitor_type == "packetdrop":
 
-            report = write_json("system.json", data)
+            run_packetdrop_monitor(
+                interval=args.interval,
+                iterations=args.iterations,
+            )
 
-            print(f"\nReport saved to {report}")
+            return
 
-        elif args.collector == "connectivity":
+        monitor_parser.print_help()
+        return
 
-            data = collect_connectivity()
-
-            report = write_json("connectivity.json", data)
-
-            print(f"\nReport saved to {report}")
-
-    else:
-
-        parser.print_help()
+    parser.print_help()
 
 
 if __name__ == "__main__":
