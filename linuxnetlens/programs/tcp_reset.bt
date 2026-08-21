@@ -1,0 +1,31 @@
+/*
+ * LinuxNetLens Phase 1 : TCP RST capture.
+ *
+ * Attaches to ``tcp:tcp_send_reset`` (local RST) and
+ * ``tcp:tcp_receive_reset`` (remote RST). These tracepoints exist
+ * upstream and on RHEL 9.
+ */
+
+tracepoint:tcp:tcp_send_reset
+{
+    if (!({{FILTER}})) { return; }
+
+    printf("{\"kind\":\"tcp_reset\",\"timestamp\":%llu,\"cpu\":%d,"
+           "\"pid\":%d,\"comm\":\"%s\",\"certainty\":\"observed\","
+           "\"probe\":\"tcp_send_reset\",\"direction\":\"local\","
+           "\"flow\":{\"proto\":\"tcp\",\"src_ip\":\"0.0.0.0\","
+           "\"src_port\":0,\"dst_ip\":\"0.0.0.0\",\"dst_port\":0}}\n",
+           nsecs, cpu, pid, comm);
+}
+
+tracepoint:tcp:tcp_receive_reset
+{
+    if (!({{FILTER}})) { return; }
+
+    printf("{\"kind\":\"tcp_reset\",\"timestamp\":%llu,\"cpu\":%d,"
+           "\"pid\":%d,\"comm\":\"%s\",\"certainty\":\"observed\","
+           "\"probe\":\"tcp_receive_reset\",\"direction\":\"remote\","
+           "\"flow\":{\"proto\":\"tcp\",\"src_ip\":\"0.0.0.0\","
+           "\"src_port\":0,\"dst_ip\":\"0.0.0.0\",\"dst_port\":0}}\n",
+           nsecs, cpu, pid, comm);
+}

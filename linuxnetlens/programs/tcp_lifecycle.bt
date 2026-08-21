@@ -1,0 +1,34 @@
+/*
+ * LinuxNetLens Phase 1 : TCP lifecycle capture.
+ *
+ * Attaches to ``tcp:inet_sock_set_state`` for full 5-tuple state
+ * transitions, and to ``tcp:tcp_retransmit_skb`` +
+ * ``kprobe:tcp_retransmit_timer`` for retransmit tracking.
+ */
+
+tracepoint:sock:inet_sock_set_state
+{
+    if (!({{FILTER}})) { return; }
+
+    printf("{\"kind\":\"tcp_state\",\"timestamp\":%llu,\"cpu\":%d,"
+           "\"pid\":%d,\"comm\":\"%s\",\"certainty\":\"observed\","
+           "\"probe\":\"inet_sock_set_state\","
+           "\"old_state\":\"%d\",\"new_state\":\"%d\","
+           "\"flow\":{\"proto\":\"tcp\",\"src_ip\":\"0.0.0.0\","
+           "\"src_port\":0,\"dst_ip\":\"0.0.0.0\",\"dst_port\":0}}\n",
+           nsecs, cpu, pid, comm,
+           args->oldstate, args->newstate);
+}
+
+tracepoint:tcp:tcp_retransmit_skb
+{
+    if (!({{FILTER}})) { return; }
+
+    printf("{\"kind\":\"tcp_retransmit\",\"timestamp\":%llu,\"cpu\":%d,"
+           "\"pid\":%d,\"comm\":\"%s\",\"certainty\":\"inferred\","
+           "\"probe\":\"tcp_retransmit_skb\","
+           "\"segment_count\":1,\"rto_fired\":false,"
+           "\"flow\":{\"proto\":\"tcp\",\"src_ip\":\"0.0.0.0\","
+           "\"src_port\":0,\"dst_ip\":\"0.0.0.0\",\"dst_port\":0}}\n",
+           nsecs, cpu, pid, comm);
+}

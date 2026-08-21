@@ -10,4 +10,7 @@ requires-python = ">=3.11"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["netscope*"]
+include = ["netscope*", "linuxnetlens*"]
+
+[project.scripts]
+linuxnetlens = "linuxnetlens.cli:main"

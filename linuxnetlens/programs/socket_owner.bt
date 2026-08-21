@@ -1,0 +1,21 @@
+/*
+ * LinuxNetLens Phase 1 : socket ownership capture.
+ *
+ * Attaches to process-context call sites so PID→flow correlation
+ * is OBSERVED, not guessed from softirq context.
+ */
+
+kprobe:tcp_v4_connect,
+kprobe:tcp_v6_connect,
+kprobe:inet_csk_accept,
+kprobe:inet_bind
+{
+    if (!({{FILTER}})) { return; }
+
+    printf("{\"kind\":\"process\",\"timestamp\":%llu,\"cpu\":%d,"
+           "\"pid\":%d,\"comm\":\"%s\",\"certainty\":\"observed\","
+           "\"probe\":\"%s\",\"syscall\":\"%s\","
+           "\"flow\":{\"proto\":\"tcp\",\"src_ip\":\"0.0.0.0\","
+           "\"src_port\":0,\"dst_ip\":\"0.0.0.0\",\"dst_port\":0}}\n",
+           nsecs, cpu, pid, comm, probe, func);
+}

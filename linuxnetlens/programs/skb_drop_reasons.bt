@@ -1,0 +1,33 @@
+/*
+ * LinuxNetLens Phase 1 : skb drop reason capture
+ *
+ * Reads the ``drop_reason`` argument from ``skb:kfree_skb`` and emits
+ * a normalised JSON event per drop. Flow filtering is applied
+ * in-kernel via {{FILTER}}.
+ *
+ * Kernel requirements:
+ *   - Linux >= 5.17 for ``drop_reason`` on kfree_skb.
+ *   - RHEL 8.10 / 9.x carry a partial backport.
+ *
+ * The event schema matches the linuxnetlens.backends.bpftrace decoder.
+ */
+
+tracepoint:skb:kfree_skb
+{
+    $proto  = "tcp";
+    $saddr  = ntop(args->skaddr);      /* placeholder: full 5-tuple */
+    $daddr  = ntop(args->skaddr);      /* extraction requires libbpf */
+    $sport  = 0;
+    $dport  = 0;
+
+    if (!({{FILTER}})) { return; }
+
+    printf("{\"kind\":\"skb_drop\",\"timestamp\":%llu,\"cpu\":%d,"
+           "\"pid\":%d,\"comm\":\"%s\",\"certainty\":\"observed\","
+           "\"probe\":\"kfree_skb\",\"drop_reason\":\"%s\","
+           "\"kernel_function\":\"%s\","
+           "\"flow\":{\"proto\":\"tcp\",\"src_ip\":\"0.0.0.0\","
+           "\"src_port\":0,\"dst_ip\":\"0.0.0.0\",\"dst_port\":0}}\n",
+           nsecs, cpu, pid, comm,
+           args->reason, ksym(args->location));
+}

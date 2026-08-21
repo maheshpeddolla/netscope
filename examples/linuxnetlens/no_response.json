@@ -1,0 +1,99 @@
+{
+  "events": [
+    {
+      "kind": "process",
+      "timestamp": 2000.0,
+      "certainty": "observed",
+      "probe": "tcp_v4_connect",
+      "pid": 5150,
+      "comm": "nc",
+      "syscall": "tcp_v4_connect",
+      "flow": {
+        "proto": "tcp",
+        "src_ip": "10.0.0.4",
+        "src_port": 51000,
+        "dst_ip": "203.0.113.7",
+        "dst_port": 22
+      }
+    },
+    {
+      "kind": "tcp_state",
+      "timestamp": 2000.1,
+      "certainty": "observed",
+      "probe": "inet_sock_set_state",
+      "pid": 5150,
+      "comm": "nc",
+      "old_state": "CLOSE",
+      "new_state": "SYN_SENT",
+      "flow": {
+        "proto": "tcp",
+        "src_ip": "10.0.0.4",
+        "src_port": 51000,
+        "dst_ip": "203.0.113.7",
+        "dst_port": 22
+      }
+    },
+    {
+      "kind": "tcp_retransmit",
+      "timestamp": 2001.5,
+      "certainty": "inferred",
+      "probe": "tcp_retransmit_skb",
+      "segment_count": 1,
+      "rto_fired": false,
+      "flow": {
+        "proto": "tcp",
+        "src_ip": "10.0.0.4",
+        "src_port": 51000,
+        "dst_ip": "203.0.113.7",
+        "dst_port": 22
+      }
+    },
+    {
+      "kind": "tcp_retransmit",
+      "timestamp": 2004.5,
+      "certainty": "inferred",
+      "probe": "tcp_retransmit_skb",
+      "segment_count": 1,
+      "rto_fired": false,
+      "flow": {
+        "proto": "tcp",
+        "src_ip": "10.0.0.4",
+        "src_port": 51000,
+        "dst_ip": "203.0.113.7",
+        "dst_port": 22
+      }
+    },
+    {
+      "kind": "tcp_retransmit",
+      "timestamp": 2010.5,
+      "certainty": "inferred",
+      "probe": "tcp_retransmit_skb",
+      "segment_count": 1,
+      "rto_fired": true,
+      "flow": {
+        "proto": "tcp",
+        "src_ip": "10.0.0.4",
+        "src_port": 51000,
+        "dst_ip": "203.0.113.7",
+        "dst_port": 22
+      }
+    },
+    {
+      "kind": "tcp_state",
+      "timestamp": 2022.0,
+      "certainty": "observed",
+      "probe": "inet_sock_set_state",
+      "pid": 5150,
+      "comm": "nc",
+      "old_state": "SYN_SENT",
+      "new_state": "CLOSE",
+      "flow": {
+        "proto": "tcp",
+        "src_ip": "10.0.0.4",
+        "src_port": 51000,
+        "dst_ip": "203.0.113.7",
+        "dst_port": 22
+      }
+    }
+  ]
+}
