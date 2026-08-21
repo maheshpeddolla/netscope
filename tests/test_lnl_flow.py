@@ -61,8 +61,13 @@ def test_filter_invalid_spec_raises():
 def test_filter_as_bpftrace_guard():
     ff = FlowFilter.parse("tcp:*:*->10.0.0.9:443")
     guard = ff.as_bpftrace_guard()
+    # IPv4 is compared as little-endian u32 to match the .bt program's
+    # $daddr_be variable ($iph->daddr read as u32 on x86_64).
+    # 10.0.0.9 → network bytes 0a 00 00 09 → LE u32 0x0900000a
+    from linuxnetlens.flow import FlowFilter as _FF
+    expected = _FF._ipv4_to_le_u32("10.0.0.9")
     assert "$proto == 6" in guard
-    assert "$daddr == \"10.0.0.9\"" in guard
+    assert f"$daddr_be == {expected}" in guard
     assert "$dport == 443" in guard
 
 

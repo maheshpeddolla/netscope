@@ -308,6 +308,14 @@ class FlowFilter:
         splices it into its scripts so the kernel filters events
         before they hit the ring buffer.
 
+        IP addresses are compared as little-endian u32 values against the
+        raw ``$saddr_be`` / ``$daddr_be`` variables the .bt program sets
+        from ``$iph->saddr`` / ``$iph->daddr`` (which are ``__be32`` in
+        the kernel and appear as network-order bytes reinterpreted as
+        LE u32 on x86_64). This avoids a bpftrace type-mismatch when
+        comparing the ``inet`` result of ``ntop()`` to a string literal
+        on bpftrace 0.17 (RHEL 8.10).
+
         Returns the string ``"1"`` if the filter is fully broad.
         """
 
@@ -321,18 +329,34 @@ class FlowFilter:
                 clauses.append(f"$proto == {proto_num}")
 
         if self.src_ip:
-            clauses.append(f"$saddr == \"{self.src_ip}\"")
+            clauses.append(
+                f"$saddr_be == {self._ipv4_to_le_u32(self.src_ip)}"
+            )
 
         if self.src_port is not None:
             clauses.append(f"$sport == {self.src_port}")
 
         if self.dst_ip:
-            clauses.append(f"$daddr == \"{self.dst_ip}\"")
+            clauses.append(
+                f"$daddr_be == {self._ipv4_to_le_u32(self.dst_ip)}"
+            )
 
         if self.dst_port is not None:
             clauses.append(f"$dport == {self.dst_port}")
 
         return " && ".join(clauses) if clauses else "1"
+
+    @staticmethod
+    def _ipv4_to_le_u32(ip: str) -> int:
+        """
+        Encode an IPv4 dotted-quad as the little-endian u32 that appears
+        when ``__be32`` bytes are read as u32 on a little-endian host.
+        Example: ``192.0.2.1`` (network bytes ``C0 00 02 01``) →
+        ``0x010200C0`` = ``16908480``.
+        """
+        import socket
+
+        return int.from_bytes(socket.inet_aton(ip), "little")
 
 
 # ----------------------------------------------------------------------

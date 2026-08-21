@@ -115,9 +115,18 @@ kretprobe:nf_hook_slow
     $saddr = ntop($iph->saddr);
     $daddr = ntop($iph->daddr);
 
+    /* Raw big-endian u32 forms of the IPs. The FlowFilter guard cannot
+     * compare against the ntop()'d `inet` type on older bpftrace builds
+     * (RHEL 8.10 ships bpftrace 0.17, which rejects `inet == "1.2.3.4"`
+     * with a Type mismatch). The guard therefore compares these u32
+     * variables against precomputed little-endian integer literals.
+     */
+    $saddr_be = (uint32)$iph->saddr;
+    $daddr_be = (uint32)$iph->daddr;
+
     /* Variables consumed by the FlowFilter guard template. The guard uses
      *   $proto == 6  (matches $ip_proto),
-     *   $saddr / $daddr string equality,
+     *   $saddr_be / $daddr_be integer equality (little-endian u32),
      *   $sport / $dport integer equality (host order).
      */
     $proto = $ip_proto;
