@@ -1,0 +1,162 @@
+/*
+ * LinuxNetLens Phase 1.5 : Real Netfilter DROP capture with 5-tuple extraction.
+ *
+ * Target scenario:
+ *   Application → TCP flow → Netfilter DROP → LinuxNetLens BLOCKED.
+ *
+ * Mechanism:
+ *   kprobe:nf_hook_slow(skb, state, ...)  — stash skb + state per-tid,
+ *                                             reset walker booleans
+ *   kprobe:nft_do_chain                    — record nftables walker seen
+ *   kprobe:ipt_do_table                    — record iptables walker seen
+ *   kretprobe:nf_hook_slow                 — read verdict (NF_DROP = 0),
+ *                                             extract 5-tuple from stashed
+ *                                             skb, emit event
+ *
+ * Struct field access uses kernel BTF. Works out-of-the-box on:
+ *   - RHEL 9 (kernel 5.14+, bpftrace >= 0.15) — CO-RE / BTF default.
+ *   - RHEL 8.5+ (kernel 4.18 backport, bpftrace >= 0.12) — requires the
+ *     kernel BTF vmlinux (/sys/kernel/btf/vmlinux) present.
+ *
+ * We deliberately extract the following and NOTHING else:
+ *   - proto, src_ip, src_port, dst_ip, dst_port   (from skb IP + TCP header)
+ *   - hook name    (from state->hook, mapped to string)
+ *   - pf           ("NFPROTO_IPV4" — IPv4-only in Phase 1.5)
+ *   - nft_walker_seen / ipt_walker_seen booleans   (corroboration only)
+ *   - pid, comm                                    (nf_hook_slow at LOCAL_OUT
+ *                                                    runs in the sending
+ *                                                    process context)
+ *
+ * We deliberately do NOT extract or fabricate:
+ *   - chain_name   (would require walking nft_chain->name reliably; deferred)
+ *   - rule_handle  (never — Phase 1.5 refuses to overclaim)
+ *   - IPv6 flows   (Phase 2)
+ *   - UDP flows    (Phase 2 — TCP-only target scenario)
+ *
+ * Phase 1.5 emits ONLY nf_verdict events. The other .bt programs remain in
+ * the tree as skeletons for later phases.
+ */
+
+kprobe:nf_hook_slow
+{
+    @lnl_skb[tid] = arg0;                  /* struct sk_buff *skb  */
+    @lnl_state[tid] = arg1;                /* struct nf_hook_state *state */
+    @lnl_nft_seen[tid] = 0;
+    @lnl_ipt_seen[tid] = 0;
+}
+
+kprobe:nft_do_chain
+{
+    @lnl_nft_seen[tid] = 1;
+}
+
+kprobe:ipt_do_table
+{
+    @lnl_ipt_seen[tid] = 1;
+}
+
+kretprobe:nf_hook_slow
+/@lnl_skb[tid] != 0/
+{
+    /* NF_DROP=0  NF_ACCEPT=1  NF_STOLEN=2  NF_QUEUE=3  NF_REPEAT=4  NF_STOP=5
+     * Phase 1.5 only reports DROP. STOLEN / QUEUE are ambiguous and reserved
+     * for Phase 2.
+     */
+    if (retval != 0) {
+        delete(@lnl_skb[tid]);
+        delete(@lnl_state[tid]);
+        delete(@lnl_nft_seen[tid]);
+        delete(@lnl_ipt_seen[tid]);
+        return;
+    }
+
+    $skb = (struct sk_buff *)@lnl_skb[tid];
+    $state = (struct nf_hook_state *)@lnl_state[tid];
+
+    /* IPv4 only for Phase 1.5 (NFPROTO_IPV4 = 2). */
+    $pf = $state->pf;
+    if ($pf != 2) {
+        delete(@lnl_skb[tid]);
+        delete(@lnl_state[tid]);
+        delete(@lnl_nft_seen[tid]);
+        delete(@lnl_ipt_seen[tid]);
+        return;
+    }
+
+    /* IP header lives at skb->head + skb->network_header. At the netfilter
+     * hooks (PRE_ROUTING / LOCAL_OUT / etc.) network_header is set. */
+    $iph = (struct iphdr *)($skb->head + $skb->network_header);
+    $ip_proto = $iph->protocol;
+
+    /* Phase 1.5 target: TCP flows only. */
+    if ($ip_proto != 6) {
+        delete(@lnl_skb[tid]);
+        delete(@lnl_state[tid]);
+        delete(@lnl_nft_seen[tid]);
+        delete(@lnl_ipt_seen[tid]);
+        return;
+    }
+
+    $ihl_bytes = ((uint16)$iph->ihl) * 4;
+    $tcph = (struct tcphdr *)($skb->head + $skb->network_header + $ihl_bytes);
+
+    /* Ports are network byte order. Swap manually — works on all bpftrace
+     * versions without depending on bswap() / __builtin_bswap availability.
+     */
+    $sport_raw = (uint16)$tcph->source;
+    $dport_raw = (uint16)$tcph->dest;
+    $sport = ((uint16)(($sport_raw >> 8) & 0xff)) | ((uint16)(($sport_raw & 0xff) << 8));
+    $dport = ((uint16)(($dport_raw >> 8) & 0xff)) | ((uint16)(($dport_raw & 0xff) << 8));
+
+    $saddr = ntop($iph->saddr);
+    $daddr = ntop($iph->daddr);
+
+    /* Variables consumed by the FlowFilter guard template. The guard uses
+     *   $proto == 6  (matches $ip_proto),
+     *   $saddr / $daddr string equality,
+     *   $sport / $dport integer equality (host order).
+     */
+    $proto = $ip_proto;
+
+    if (!({{FILTER}})) {
+        delete(@lnl_skb[tid]);
+        delete(@lnl_state[tid]);
+        delete(@lnl_nft_seen[tid]);
+        delete(@lnl_ipt_seen[tid]);
+        return;
+    }
+
+    /* Map hook enum to a human-readable string.
+     *   NF_INET_PRE_ROUTING=0, NF_INET_LOCAL_IN=1, NF_INET_FORWARD=2,
+     *   NF_INET_LOCAL_OUT=3,  NF_INET_POST_ROUTING=4
+     */
+    $hook_n = $state->hook;
+    $hook_s = "UNKNOWN_HOOK";
+    if ($hook_n == 0) { $hook_s = "PRE_ROUTING"; }
+    if ($hook_n == 1) { $hook_s = "LOCAL_IN"; }
+    if ($hook_n == 2) { $hook_s = "FORWARD"; }
+    if ($hook_n == 3) { $hook_s = "LOCAL_OUT"; }
+    if ($hook_n == 4) { $hook_s = "POST_ROUTING"; }
+
+    /* Emit as one JSON object per printf. bpftrace's -f json wrapper puts
+     * this string into the "data" field of an outer envelope, which
+     * linuxnetlens.backends.bpftrace re-parses.
+     */
+    printf("{\"kind\":\"nf_verdict\",\"timestamp\":%llu,\"cpu\":%d,"
+           "\"pid\":%d,\"comm\":\"%s\",\"certainty\":\"observed\","
+           "\"probe\":\"nf_hook_slow\",\"verdict\":\"DROP\","
+           "\"hook\":\"%s\",\"pf\":\"NFPROTO_IPV4\","
+           "\"nft_walker_seen\":%d,\"ipt_walker_seen\":%d,"
+           "\"chain_name\":\"\","
+           "\"flow\":{\"proto\":\"tcp\",\"src_ip\":\"%s\","
+           "\"src_port\":%d,\"dst_ip\":\"%s\",\"dst_port\":%d}}\n",
+           nsecs, cpu, pid, comm,
+           $hook_s,
+           @lnl_nft_seen[tid], @lnl_ipt_seen[tid],
+           $saddr, $sport, $daddr, $dport);
+
+    delete(@lnl_skb[tid]);
+    delete(@lnl_state[tid]);
+    delete(@lnl_nft_seen[tid]);
+    delete(@lnl_ipt_seen[tid]);
+}
