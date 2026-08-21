@@ -45,15 +45,19 @@ kprobe:nf_hook_slow
     @lnl_ipt_seen[tid] = 0;
 }
 
+/*{{NFT_BEGIN}}*/
 kprobe:nft_do_chain
 {
     @lnl_nft_seen[tid] = 1;
 }
+/*{{NFT_END}}*/
 
+/*{{IPT_BEGIN}}*/
 kprobe:ipt_do_table
 {
     @lnl_ipt_seen[tid] = 1;
 }
+/*{{IPT_END}}*/
 
 kretprobe:nf_hook_slow
 /@lnl_skb[tid] != 0/
@@ -141,15 +145,11 @@ kretprobe:nf_hook_slow
     /* Emit as one JSON object per printf. bpftrace's -f json wrapper puts
      * this string into the "data" field of an outer envelope, which
      * linuxnetlens.backends.bpftrace re-parses.
+     *
+     * NOTE: bpftrace does NOT concatenate adjacent string literals like C.
+     * The entire format string must be a single literal on one line.
      */
-    printf("{\"kind\":\"nf_verdict\",\"timestamp\":%llu,\"cpu\":%d,"
-           "\"pid\":%d,\"comm\":\"%s\",\"certainty\":\"observed\","
-           "\"probe\":\"nf_hook_slow\",\"verdict\":\"DROP\","
-           "\"hook\":\"%s\",\"pf\":\"NFPROTO_IPV4\","
-           "\"nft_walker_seen\":%d,\"ipt_walker_seen\":%d,"
-           "\"chain_name\":\"\","
-           "\"flow\":{\"proto\":\"tcp\",\"src_ip\":\"%s\","
-           "\"src_port\":%d,\"dst_ip\":\"%s\",\"dst_port\":%d}}\n",
+    printf("{\"kind\":\"nf_verdict\",\"timestamp\":%llu,\"cpu\":%d,\"pid\":%d,\"comm\":\"%s\",\"certainty\":\"observed\",\"probe\":\"nf_hook_slow\",\"verdict\":\"DROP\",\"hook\":\"%s\",\"pf\":\"NFPROTO_IPV4\",\"nft_walker_seen\":%d,\"ipt_walker_seen\":%d,\"chain_name\":\"\",\"flow\":{\"proto\":\"tcp\",\"src_ip\":\"%s\",\"src_port\":%d,\"dst_ip\":\"%s\",\"dst_port\":%d}}\n",
            nsecs, cpu, pid, comm,
            $hook_s,
            @lnl_nft_seen[tid], @lnl_ipt_seen[tid],

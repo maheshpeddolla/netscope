@@ -66,3 +66,60 @@ def test_bpftrace_backend_reports_unavailable_on_non_linux(monkeypatch):
     from linuxnetlens.backends.bpftrace import BpftraceBackend
     backend = BpftraceBackend(bpftrace_path="/usr/bin/bpftrace")
     assert backend.available() is False
+
+
+def test_bpftrace_backend_strips_missing_probe_blocks(monkeypatch):
+    """
+    Regression: if a kprobe symbol is not exported by the running kernel
+    (e.g. ipt_do_table on RHEL 8.10 with iptables-nft), the corresponding
+    block in nf_verdict.bt must be excised before the program is loaded,
+    otherwise bpftrace fails to attach and the run produces 0 events.
+    """
+    from linuxnetlens.backends.bpftrace import BpftraceBackend
+    from linuxnetlens.flow import FlowFilter
+
+    backend = BpftraceBackend(bpftrace_path="/usr/bin/bpftrace")
+
+    # Simulate: nft_do_chain present, ipt_do_table absent.
+    def fake_available(self, symbol: str) -> bool:
+        return symbol == "nft_do_chain"
+
+    monkeypatch.setattr(
+        BpftraceBackend, "_kprobe_available", fake_available
+    )
+
+    program = backend._build_program(
+        FlowFilter.parse("tcp:*:*->192.0.2.1:12345")
+    )
+
+    # Strip comments before checking so the file's header docstring
+    # (which mentions probe names) doesn't cause a false positive.
+    import re as _re
+    code = _re.sub(r"/\*.*?\*/", "", program, flags=_re.DOTALL)
+
+    # The nft block must remain; the ipt block must be gone.
+    assert "kprobe:nft_do_chain" in code
+    assert "kprobe:ipt_do_table" not in code
+    # Walker booleans still referenced in the emitter path — they will
+    # simply stay 0 when the corresponding probe never fires.
+    assert "@lnl_ipt_seen" in program
+
+
+def test_bpftrace_backend_keeps_all_probe_blocks_when_available(monkeypatch):
+    from linuxnetlens.backends.bpftrace import BpftraceBackend
+    from linuxnetlens.flow import FlowFilter
+
+    backend = BpftraceBackend(bpftrace_path="/usr/bin/bpftrace")
+    monkeypatch.setattr(
+        BpftraceBackend, "_kprobe_available", lambda self, sym: True
+    )
+
+    program = backend._build_program(
+        FlowFilter.parse("tcp:*:*->192.0.2.1:12345")
+    )
+
+    import re as _re
+    code = _re.sub(r"/\*.*?\*/", "", program, flags=_re.DOTALL)
+
+    assert "kprobe:nft_do_chain" in code
+    assert "kprobe:ipt_do_table" in code

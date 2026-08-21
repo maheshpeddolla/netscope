@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -120,10 +121,10 @@ class BpftraceBackend(BpfBackend):
         )
 
         try:
-            stdout, _ = proc.communicate(timeout=duration + 5)
+            stdout, stderr = proc.communicate(timeout=duration + 5)
         except subprocess.TimeoutExpired:
             proc.terminate()
-            stdout, _ = proc.communicate()
+            stdout, stderr = proc.communicate()
 
         events: List[Event] = []
 
@@ -158,6 +159,20 @@ class BpftraceBackend(BpfBackend):
             if event is not None:
                 events.append(event)
 
+        # If bpftrace failed to attach or hit a syntax error we would
+        # otherwise silently report "no matching events". Surface real
+        # errors (not the benign "Attaching N probes..." status) so the
+        # user sees the actual cause.
+        if not events and stderr:
+            hard_error = any(
+                marker in stderr
+                for marker in ("ERROR:", "Cannot attach", "Segmentation fault")
+            )
+            if hard_error:
+                raise RuntimeError(
+                    "bpftrace failed. stderr:\n" + stderr.strip()
+                )
+
         return events
 
     # ------------------------------------------------------------------
@@ -176,9 +191,61 @@ class BpftraceBackend(BpfBackend):
         for name in _PROGRAM_FILES:
             body = (_PROGRAMS_DIR / name).read_text(encoding="utf-8")
             body = body.replace("{{FILTER}}", guard)
+            body = self._apply_probe_gates(body)
             sources.append(body)
 
         return "\n\n".join(sources)
+
+    # ------------------------------------------------------------------
+    # Optional-probe gating
+    # ------------------------------------------------------------------
+    #
+    # Some kprobes we corroborate against (currently kprobe:ipt_do_table,
+    # kprobe:nft_do_chain) are not present on every kernel build. RHEL 8.10,
+    # for instance, ships iptables-nft and does NOT export ipt_do_table.
+    # Attaching to a missing kprobe fails the whole bpftrace program, so
+    # we probe availability at load time and strip absent blocks. The
+    # walker booleans they set (@lnl_ipt_seen / @lnl_nft_seen) remain
+    # initialised to 0, which correctly means "walker not observed".
+    #
+    # The .bt source wraps each optional block in
+    #     /*{{IPT_BEGIN}}*/ ... /*{{IPT_END}}*/
+    # markers so we can excise it here without touching bpftrace syntax.
+
+    _PROBE_GATES = (
+        ("IPT", "ipt_do_table"),
+        ("NFT", "nft_do_chain"),
+    )
+
+    def _apply_probe_gates(self, body: str) -> str:
+
+        for tag, symbol in self._PROBE_GATES:
+            if self._kprobe_available(symbol):
+                continue
+            pattern = re.compile(
+                r"/\*\{\{" + tag + r"_BEGIN\}\}\*/.*?/\*\{\{" + tag + r"_END\}\}\*/",
+                re.DOTALL,
+            )
+            body = pattern.sub("", body)
+
+        return body
+
+    def _kprobe_available(self, symbol: str) -> bool:
+
+        if self._bpftrace is None:
+            return False
+
+        try:
+            proc = subprocess.run(
+                [self._bpftrace, "-l", f"kprobe:{symbol}"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return False
+
+        return bool(proc.stdout.strip())
 
     # ------------------------------------------------------------------
     # Event decoding

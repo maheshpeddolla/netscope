@@ -112,3 +112,29 @@ def test_backend_loads_only_this_program_in_phase_1_5():
         "Phase 1.5 backend must load only the production-quality "
         "nf_verdict.bt program; the other .bt files are skeletons."
     )
+
+
+def test_printf_format_strings_are_single_literals(bt_source: str):
+    """
+    Regression guard: bpftrace does NOT concatenate adjacent string
+    literals like C. The `printf(...)` format argument must be a single
+    string literal, not multiple quoted chunks separated by whitespace/
+    newlines. This test caught a real syntax error on RHEL 8.10.
+    """
+    # Strip comments to avoid false positives on doc examples.
+    code_only = re.sub(r"/\*.*?\*/", "", bt_source, flags=re.DOTALL)
+    code_only = re.sub(r"//.*", "", code_only)
+
+    # Find every printf(...) call. Non-greedy across newlines.
+    for match in re.finditer(r"printf\s*\((.*?)\)\s*;", code_only, flags=re.DOTALL):
+        call_args = match.group(1)
+        # Extract the first argument (the format string) — take up to the
+        # first top-level comma. We only need to inspect the leading
+        # string literal(s), so a simple scan is sufficient.
+        # Look for the pattern: "..."<whitespace/newline>"..."
+        adjacent = re.search(r'"\s*\n\s*"', call_args)
+        assert adjacent is None, (
+            "printf format string uses C-style adjacent-literal "
+            "concatenation, which bpftrace does not support:\n"
+            f"{call_args[:200]}..."
+        )
